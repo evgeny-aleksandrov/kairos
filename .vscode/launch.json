@@ -1,0 +1,69 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Fetch QQQ Prices",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/fetch_qqq_prices.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "args": [
+        "--output",
+        "${workspaceFolder}/data/qqq_prices.parquet",
+        "--start-date",
+        "2020-01-01"
+      ]
+    },
+    {
+      "name": "Generate Synthetic QQQ Option Chain",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/generate_synthetic_qqq_option_chain.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "args": [
+        "--output",
+        "${workspaceFolder}/data/qqq_chain.parquet",
+        "--spot",
+        "500",
+        "--risk-free-rate",
+        "0.04",
+        "--dividend-yield",
+        "0.0",
+        "--seed",
+        "7"
+      ]
+    },
+    {
+      "name": "Kairos CLI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "kairos.cli",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "args": [
+        "--prices",
+        "${workspaceFolder}/data/qqq_prices.parquet",
+        "--chain",
+        "${workspaceFolder}/data/qqq_chain.parquet",
+        "--output-dir",
+        "${workspaceFolder}/outputs/debug_run",
+        "--smile-weighting",
+        "vega"
+      ]
+    }
+  ]
+}
