@@ -44,6 +44,28 @@
       ]
     },
     {
+      "name": "Fetch QQQ Prices IBKR",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/fetch_qqq_prices_ibkr.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "IBKR_WEB_API_BASE_URL": "https://localhost:5000/v1/api",
+        "IBKR_WEB_API_INSECURE": "true"
+      },
+      "args": [
+        "--output",
+        "${workspaceFolder}/data/qqq_prices_ibkr.parquet",
+        "--period",
+        "1y",
+        "--bar",
+        "1d"
+      ]
+    },
+    {
       "name": "Kairos CLI",
       "type": "debugpy",
       "request": "launch",
