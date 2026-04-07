@@ -10,4 +10,21 @@ Python repository for end-to-end listed-option volatility analysis:
 
 ## Ingestion Paths
 
-Daily prices can be fetched from the IBKR Web API and from Twelve Data.
+Daily prices and option-chain snapshots can be fetched from the IBKR Web API.
+
+## Starting The IBKR Gateway
+
+Before using the IBKR Web API scripts, start the Client Portal Gateway locally and complete the browser login flow.
+
+From the extracted `clientportal.gw` directory on Windows:
+
+```powershell
+cd C:\path\to\clientportal.gw
+.\bin\run.bat .\root\conf.yaml
+```
+
+Then authenticate in the browser at:
+
+```text
+https://localhost:5000
+```

@@ -7,12 +7,12 @@ from kairos.data.ibkr import write_stock_history
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Fetch QQQ daily prices from the IBKR Web API."
+        description="Fetch historical stock prices from the IBKR Web API."
     )
     parser.add_argument(
         "--output",
         required=True,
-        help="Output csv or parquet path, e.g. data/qqq_prices_ibkr.parquet",
+        help="Output csv or parquet path, e.g. data/prices_ibkr.parquet",
     )
     parser.add_argument("--symbol", default="QQQ", help="Underlying ticker symbol.")
     parser.add_argument("--period", default="1y", help="IBKR history period, e.g. 30d, 1y, 2y.")

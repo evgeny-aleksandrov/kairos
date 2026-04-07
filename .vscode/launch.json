@@ -2,52 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Fetch QQQ Prices",
+      "name": "Fetch Stock Prices IBKR",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/fetch_qqq_prices.py",
-      "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}",
-      "justMyCode": true,
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
-      },
-      "args": [
-        "--output",
-        "${workspaceFolder}/data/qqq_prices.parquet",
-        "--start-date",
-        "2020-01-01"
-      ]
-    },
-    {
-      "name": "Generate Synthetic QQQ Option Chain",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${workspaceFolder}/scripts/generate_synthetic_qqq_option_chain.py",
-      "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}",
-      "justMyCode": true,
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
-      },
-      "args": [
-        "--output",
-        "${workspaceFolder}/data/qqq_chain.parquet",
-        "--spot",
-        "500",
-        "--risk-free-rate",
-        "0.04",
-        "--dividend-yield",
-        "0.0",
-        "--seed",
-        "7"
-      ]
-    },
-    {
-      "name": "Fetch QQQ Prices IBKR",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${workspaceFolder}/scripts/fetch_qqq_prices_ibkr.py",
+      "program": "${workspaceFolder}/scripts/fetch_stock_prices_ibkr.py",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
       "justMyCode": true,
@@ -58,7 +16,9 @@
       },
       "args": [
         "--output",
-        "${workspaceFolder}/data/qqq_prices_ibkr.parquet",
+        "${workspaceFolder}/data/prices_ibkr.parquet",
+        "--symbol",
+        "QQQ",
         "--period",
         "1y",
         "--bar",
@@ -66,10 +26,36 @@
       ]
     },
     {
-      "name": "Kairos CLI",
+      "name": "Fetch Option Chain IBKR",
       "type": "debugpy",
       "request": "launch",
-      "module": "kairos.cli",
+      "program": "${workspaceFolder}/scripts/fetch_option_chain_ibkr.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "IBKR_WEB_API_BASE_URL": "https://localhost:5000/v1/api",
+        "IBKR_WEB_API_INSECURE": "true"
+      },
+      "args": [
+        "--output",
+        "${workspaceFolder}/data/option_chain_ibkr.parquet",
+        "--symbol",
+        "QQQ",
+        "--strike-limit-per-month",
+        "12",
+        "--risk-free-rate",
+        "0.04",
+        "--dividend-yield",
+        "0.0"
+      ]
+    },
+    {
+      "name": "Run Pipeline Script",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_pipeline.py",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
       "justMyCode": true,
@@ -78,9 +64,9 @@
       },
       "args": [
         "--prices",
-        "${workspaceFolder}/data/qqq_prices.parquet",
+        "${workspaceFolder}/data/prices_ibkr.parquet",
         "--chain",
-        "${workspaceFolder}/data/qqq_chain.parquet",
+        "${workspaceFolder}/data/option_chain_ibkr.parquet",
         "--output-dir",
         "${workspaceFolder}/outputs/debug_run",
         "--smile-weighting",

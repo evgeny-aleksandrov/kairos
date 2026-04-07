@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import os
 import ssl
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import pandas as pd
+import numpy as np
 
 
 DEFAULT_BASE_URL = "https://localhost:5000/v1/api"
@@ -30,7 +32,7 @@ class IBKRWebApiClient:
     Minimal IBKR Web API client for historical stock bars.
 
     TODO:
-    - Add Interactive Brokers option-chain retrieval via secdef endpoints.
+    - Add more complete session/bootstrap helpers when the repo needs them.
     """
 
     def __init__(
@@ -87,7 +89,7 @@ class IBKRWebApiClient:
     def ensure_brokerage_session(self) -> Any:
         return self._request_json("GET", "iserver/accounts")
 
-    def resolve_stock_conid(self, symbol: str = "QQQ") -> int:
+    def resolve_stock_conid(self, symbol: str) -> int:
         payload = self._request_json("GET", "trsrv/stocks", {"symbols": symbol.upper()})
         candidates = payload.get(symbol.upper(), [])
         for candidate in candidates:
@@ -97,6 +99,79 @@ class IBKRWebApiClient:
                 if contract.get("isUS"):
                     return int(contract["conid"])
         raise IBKRError(f"Could not resolve a US stock conid for {symbol}.")
+
+    def search_secdef(self, symbol: str, sec_type: str = "STK") -> list[dict[str, Any]]:
+        payload = self._request_json(
+            "GET",
+            "iserver/secdef/search",
+            {"symbol": symbol.upper(), "secType": sec_type},
+        )
+        if not isinstance(payload, list):
+            raise IBKRError(f"Unexpected secdef search response for {symbol}: {payload}")
+        return payload
+
+    def fetch_option_strikes(
+        self,
+        underlying_conid: int,
+        month: str,
+        exchange: str = "SMART",
+    ) -> dict[str, Any]:
+        return self._request_json(
+            "GET",
+            "iserver/secdef/strikes",
+            {
+                "conid": str(underlying_conid),
+                "sectype": "OPT",
+                "month": month,
+                "exchange": exchange,
+            },
+        )
+
+    def fetch_option_contract_info(
+        self,
+        underlying_conid: int,
+        month: str,
+        strike: float,
+        right: str,
+        exchange: str = "SMART",
+    ) -> list[dict[str, Any]]:
+        payload = self._request_json(
+            "GET",
+            "iserver/secdef/info",
+            {
+                "conid": str(underlying_conid),
+                "sectype": "OPT",
+                "month": month,
+                "exchange": exchange,
+                "strike": str(strike),
+                "right": right,
+            },
+        )
+        if not isinstance(payload, list):
+            raise IBKRError(
+                f"Unexpected secdef info response for conid={underlying_conid}, month={month}, strike={strike}, right={right}: {payload}"
+            )
+        return payload
+
+    def fetch_marketdata_snapshot(
+        self,
+        conids: list[int],
+        fields: list[str],
+        hydrate_seconds: float = 0.25,
+    ) -> list[dict[str, Any]]:
+        if not conids:
+            return []
+        params = {
+            "conids": ",".join(str(conid) for conid in conids),
+            "fields": ",".join(fields),
+        }
+        self._request_json("GET", "iserver/marketdata/snapshot", params)
+        if hydrate_seconds > 0:
+            time.sleep(hydrate_seconds)
+        payload = self._request_json("GET", "iserver/marketdata/snapshot", params)
+        if not isinstance(payload, list):
+            raise IBKRError(f"Unexpected marketdata snapshot response: {payload}")
+        return payload
 
     def fetch_historical_bars(
         self,
@@ -221,5 +296,191 @@ def write_stock_history(
 
 def ibkr_option_chain_todo() -> None:
     raise NotImplementedError(
-        "IBKR option-chain integration is not implemented yet."
+        "IBKR option-chain integration is now in fetch_option_chain_snapshot()."
     )
+
+
+def _extract_option_months(search_results: list[dict[str, Any]]) -> tuple[int, list[str], str]:
+    for result in search_results:
+        conid = result.get("conid")
+        for section in result.get("sections", []):
+            if section.get("secType") == "OPT":
+                months = str(section.get("months", "")).split(";")
+                months = [month for month in months if month]
+                exchange = str(section.get("exchange", "SMART")).split(";")[0]
+                if conid and months:
+                    return int(conid), months, exchange
+    raise IBKRError("Could not extract option months from secdef search response.")
+
+
+def _safe_float(value: Any) -> float | np.nan:
+    if value in (None, "", "--"):
+        return np.nan
+    try:
+        return float(str(value).replace(",", ""))
+    except ValueError:
+        return np.nan
+
+
+def _select_strikes_around_spot(
+    strikes: list[float],
+    spot: float | np.nan,
+    strike_limit: int | None,
+) -> list[float]:
+    unique = sorted({float(strike) for strike in strikes})
+    if strike_limit is None or strike_limit <= 0 or strike_limit >= len(unique) or np.isnan(spot):
+        return unique
+    ordered = sorted(unique, key=lambda strike: (abs(strike - spot), strike))
+    return sorted(ordered[:strike_limit])
+
+
+def _chunked(values: list[int], chunk_size: int) -> list[list[int]]:
+    return [values[idx : idx + chunk_size] for idx in range(0, len(values), chunk_size)]
+
+
+def fetch_option_chain_snapshot(
+    symbol: str = "QQQ",
+    months: list[str] | None = None,
+    exchange: str | None = None,
+    strike_limit_per_month: int | None = 12,
+    rights: tuple[str, ...] = ("C", "P"),
+    risk_free_rate: float = 0.0,
+    dividend_yield: float = 0.0,
+    client: IBKRWebApiClient | None = None,
+) -> pd.DataFrame:
+    resolved_client = client or IBKRWebApiClient()
+    resolved_client.ensure_brokerage_session()
+
+    search_results = resolved_client.search_secdef(symbol=symbol, sec_type="STK")
+    underlying_conid, available_months, discovered_exchange = _extract_option_months(search_results)
+    resolved_exchange = exchange or discovered_exchange or "SMART"
+    target_months = months or available_months[:3]
+
+    underlying_snapshot = resolved_client.fetch_marketdata_snapshot(
+        [underlying_conid],
+        fields=["31"],
+    )
+    spot = _safe_float(underlying_snapshot[0].get("31")) if underlying_snapshot else np.nan
+
+    contracts: list[dict[str, Any]] = []
+    for month in target_months:
+        strike_payload = resolved_client.fetch_option_strikes(
+            underlying_conid=underlying_conid,
+            month=month,
+            exchange=resolved_exchange,
+        )
+        strike_pool: list[float] = []
+        for right in rights:
+            side_key = "call" if right == "C" else "put"
+            strike_pool.extend(strike_payload.get(side_key, []))
+        selected_strikes = _select_strikes_around_spot(
+            strike_pool,
+            spot=spot,
+            strike_limit=strike_limit_per_month,
+        )
+
+        for strike in selected_strikes:
+            for right in rights:
+                info_rows = resolved_client.fetch_option_contract_info(
+                    underlying_conid=underlying_conid,
+                    month=month,
+                    strike=strike,
+                    right=right,
+                    exchange=resolved_exchange,
+                )
+                if info_rows:
+                    contracts.append(info_rows[0])
+
+    if not contracts:
+        return pd.DataFrame(
+            columns=[
+                "quote_date",
+                "expiry",
+                "strike",
+                "option_type",
+                "bid",
+                "ask",
+                "last",
+                "volume",
+                "open_interest",
+                "underlying_price",
+                "risk_free_rate",
+                "dividend_yield",
+                "symbol",
+                "conid",
+                "exchange",
+                "has_delayed",
+            ]
+        )
+
+    snapshot_fields = ["31", "84", "86", "7089", "7638", "6509"]
+    snapshot_rows: list[dict[str, Any]] = []
+    for conid_batch in _chunked([int(contract["conid"]) for contract in contracts], 100):
+        snapshot_rows.extend(
+            resolved_client.fetch_marketdata_snapshot(conid_batch, fields=snapshot_fields)
+        )
+    snapshot_map = {int(row["conid"]): row for row in snapshot_rows if row.get("conid") is not None}
+
+    quote_date = pd.Timestamp.utcnow().tz_localize(None).normalize()
+    rows: list[dict[str, Any]] = []
+    for contract in contracts:
+        conid = int(contract["conid"])
+        snapshot = snapshot_map.get(conid, {})
+        maturity = str(contract.get("maturityDate", ""))
+        expiry = pd.to_datetime(maturity, format="%Y%m%d", errors="coerce")
+        rows.append(
+            {
+                "quote_date": quote_date,
+                "expiry": expiry,
+                "strike": _safe_float(contract.get("strike")),
+                "option_type": "call" if contract.get("right") == "C" else "put",
+                "bid": _safe_float(snapshot.get("84")),
+                "ask": _safe_float(snapshot.get("86")),
+                "last": _safe_float(snapshot.get("31")),
+                "volume": _safe_float(snapshot.get("7089")),
+                "open_interest": _safe_float(snapshot.get("7638")),
+                "underlying_price": spot,
+                "risk_free_rate": risk_free_rate,
+                "dividend_yield": dividend_yield,
+                "symbol": contract.get("symbol", symbol.upper()),
+                "conid": conid,
+                "exchange": contract.get("exchange", resolved_exchange),
+                "has_delayed": snapshot.get("6509"),
+                "maturity_date": maturity,
+                "trading_class": contract.get("tradingClass"),
+                "multiplier": contract.get("multiplier"),
+            }
+        )
+
+    frame = pd.DataFrame(rows).sort_values(["expiry", "option_type", "strike"]).reset_index(drop=True)
+    return frame
+
+
+def write_option_chain_snapshot(
+    output_path: str | Path,
+    symbol: str = "QQQ",
+    months: list[str] | None = None,
+    exchange: str | None = None,
+    strike_limit_per_month: int | None = 12,
+    rights: tuple[str, ...] = ("C", "P"),
+    risk_free_rate: float = 0.0,
+    dividend_yield: float = 0.0,
+    client: IBKRWebApiClient | None = None,
+) -> Path:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    frame = fetch_option_chain_snapshot(
+        symbol=symbol,
+        months=months,
+        exchange=exchange,
+        strike_limit_per_month=strike_limit_per_month,
+        rights=rights,
+        risk_free_rate=risk_free_rate,
+        dividend_yield=dividend_yield,
+        client=client,
+    )
+    if output_path.suffix == ".parquet":
+        frame.to_parquet(output_path, index=False)
+    else:
+        frame.to_csv(output_path, index=False)
+    return output_path

@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+import numpy as np
+
+from kairos.data.ibkr import _extract_option_months, _safe_float, _select_strikes_around_spot
+
+
+def test_extract_option_months_from_secdef_search() -> None:
+    payload = [
+        {
+            "conid": "320227571",
+            "symbol": "QQQ",
+            "sections": [
+                {"secType": "STK"},
+                {"secType": "OPT", "months": "APR26;MAY26;JUN26", "exchange": "SMART;IBUSOPT"},
+            ],
+        }
+    ]
+
+    conid, months, exchange = _extract_option_months(payload)
+
+    assert conid == 320227571
+    assert months == ["APR26", "MAY26", "JUN26"]
+    assert exchange == "SMART"
+
+
+def test_safe_float_handles_blank_and_numeric_strings() -> None:
+    assert np.isnan(_safe_float("--"))
+    assert _safe_float("123.45") == 123.45
+    assert _safe_float("1,234") == 1234.0
+
+
+def test_select_strikes_around_spot_limits_count() -> None:
+    strikes = [450, 460, 470, 480, 490, 500, 510, 520]
+    selected = _select_strikes_around_spot(strikes, spot=497, strike_limit=4)
+
+    assert selected == [480.0, 490.0, 500.0, 510.0]
