@@ -15,8 +15,10 @@
         "IBKR_WEB_API_INSECURE": "true"
       },
       "args": [
-        "--output",
-        "${workspaceFolder}/data/prices_ibkr.parquet",
+        "--output_dir",
+        "${workspaceFolder}/data",
+        "--output-format",
+        "parquet",
         "--symbol",
         "QQQ",
         "--period",
@@ -64,7 +66,7 @@
       },
       "args": [
         "--prices",
-        "${workspaceFolder}/data/prices_ibkr.parquet",
+        "${workspaceFolder}/data/qqq_prices_ibkr.parquet",
         "--chain",
         "${workspaceFolder}/data/option_chain_ibkr.parquet",
         "--output-dir",

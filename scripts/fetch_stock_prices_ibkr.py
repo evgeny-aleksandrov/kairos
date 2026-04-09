@@ -10,9 +10,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Fetch historical stock prices from the IBKR Web API."
     )
     parser.add_argument(
-        "--output",
+        "--output_dir",
         required=True,
-        help="Output csv or parquet path, e.g. data/prices_ibkr.parquet",
+        help="Output directory for the fetched stock prices.",
+    )
+    parser.add_argument(
+        "--output-format",
+        default="parquet",
+        choices=["csv", "parquet"],
+        help="Output format for the fetched stock prices.",
     )
     parser.add_argument("--symbol", default="QQQ", help="Underlying ticker symbol.")
     parser.add_argument("--period", default="1y", help="IBKR history period, e.g. 30d, 1y, 2y.")
@@ -39,7 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     path = write_stock_history(
-        output_path=args.output,
+        output_dir=args.output_dir,
+        output_format=args.output_format,
         symbol=args.symbol,
         period=args.period,
         bar=args.bar,

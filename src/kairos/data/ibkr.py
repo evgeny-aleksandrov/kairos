@@ -267,7 +267,8 @@ def fetch_stock_history(
 
 
 def write_stock_history(
-    output_path: str | Path,
+    output_dir: str | Path,
+    output_format: str = "parquet",
     symbol: str = "QQQ",
     period: str = "1y",
     bar: str = "1d",
@@ -276,7 +277,7 @@ def write_stock_history(
     source: str = "trades",
     client: IBKRWebApiClient | None = None,
 ) -> Path:
-    output_path = Path(output_path)
+    output_path = Path(output_dir) / f"{symbol.lower()}_prices_ibkr.{output_format}"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame = fetch_stock_history(
         symbol=symbol,
