@@ -157,7 +157,7 @@ class IBKRWebApiClient:
         self,
         conids: list[int],
         fields: list[str],
-        hydrate_seconds: float = 0.25,
+        hydrate_seconds: float = 0.75, #Increasing to 0.75 seconds to allow IBKR to populate the bid/ask data.
     ) -> list[dict[str, Any]]:
         if not conids:
             return []
@@ -314,7 +314,7 @@ def _extract_option_months(search_results: list[dict[str, Any]]) -> tuple[int, l
     raise IBKRError("Could not extract option months from secdef search response.")
 
 
-def _safe_float(value: Any) -> float | np.nan:
+def _safe_float(value: Any) -> float:
     if value in (None, "", "--"):
         return np.nan
     try:
@@ -325,14 +325,33 @@ def _safe_float(value: Any) -> float | np.nan:
 
 def _select_strikes_around_spot(
     strikes: list[float],
-    spot: float | np.nan,
+    spot: float,
     strike_limit: int | None,
+    min_moneyness: float | None = None,
+    max_moneyness: float | None = None,
 ) -> list[float]:
     unique = sorted({float(strike) for strike in strikes})
-    if strike_limit is None or strike_limit <= 0 or strike_limit >= len(unique) or np.isnan(spot):
+
+    if not np.isnan(spot) and min_moneyness is not None:
+        unique = [strike for strike in unique if strike >= spot * min_moneyness]
+    if not np.isnan(spot) and max_moneyness is not None:
+        unique = [strike for strike in unique if strike <= spot * max_moneyness]
+
+    if not unique:
+        return []
+    if strike_limit is None or strike_limit <= 0 or strike_limit >= len(unique):
         return unique
-    ordered = sorted(unique, key=lambda strike: (abs(strike - spot), strike))
-    return sorted(ordered[:strike_limit])
+    if np.isnan(spot):
+        indexes = np.linspace(0, len(unique) - 1, strike_limit).round().astype(int)
+        return [unique[idx] for idx in sorted(set(indexes))]
+    if min_moneyness is None and max_moneyness is None:
+        ordered = sorted(unique, key=lambda strike: (abs(strike - spot), strike))
+        return sorted(ordered[:strike_limit])
+
+    atm_index = min(range(len(unique)), key=lambda idx: abs(unique[idx] - spot))
+    indexes = set(np.linspace(0, len(unique) - 1, strike_limit - 1).round().astype(int))
+    indexes.add(atm_index)
+    return [unique[idx] for idx in sorted(indexes)]
 
 
 def _chunked(values: list[int], chunk_size: int) -> list[list[int]]:
@@ -343,7 +362,10 @@ def fetch_option_chain_snapshot(
     symbol: str = "QQQ",
     months: list[str] | None = None,
     exchange: str | None = None,
-    strike_limit_per_month: int | None = 12,
+    month_limit: int | None = 6,
+    strike_limit_per_month: int | None = 25,
+    min_moneyness: float | None = 0.80,
+    max_moneyness: float | None = 1.20,
     rights: tuple[str, ...] = ("C", "P"),
     risk_free_rate: float = 0.0,
     dividend_yield: float = 0.0,
@@ -355,7 +377,12 @@ def fetch_option_chain_snapshot(
     search_results = resolved_client.search_secdef(symbol=symbol, sec_type="STK")
     underlying_conid, available_months, discovered_exchange = _extract_option_months(search_results)
     resolved_exchange = exchange or discovered_exchange or "SMART"
-    target_months = months or available_months[:3]
+    if months is not None:
+        target_months = months
+    elif month_limit is None or month_limit <= 0:
+        target_months = available_months
+    else:
+        target_months = available_months[:month_limit]
 
     underlying_snapshot = resolved_client.fetch_marketdata_snapshot(
         [underlying_conid],
@@ -378,6 +405,8 @@ def fetch_option_chain_snapshot(
             strike_pool,
             spot=spot,
             strike_limit=strike_limit_per_month,
+            min_moneyness=min_moneyness,
+            max_moneyness=max_moneyness,
         )
 
         for strike in selected_strikes:
@@ -462,7 +491,10 @@ def write_option_chain_snapshot(
     symbol: str = "QQQ",
     months: list[str] | None = None,
     exchange: str | None = None,
-    strike_limit_per_month: int | None = 12,
+    month_limit: int | None = 6,
+    strike_limit_per_month: int | None = 25,
+    min_moneyness: float | None = 0.80,
+    max_moneyness: float | None = 1.20,
     rights: tuple[str, ...] = ("C", "P"),
     risk_free_rate: float = 0.0,
     dividend_yield: float = 0.0,
@@ -474,7 +506,10 @@ def write_option_chain_snapshot(
         symbol=symbol,
         months=months,
         exchange=exchange,
+        month_limit=month_limit,
         strike_limit_per_month=strike_limit_per_month,
+        min_moneyness=min_moneyness,
+        max_moneyness=max_moneyness,
         rights=rights,
         risk_free_rate=risk_free_rate,
         dividend_yield=dividend_yield,

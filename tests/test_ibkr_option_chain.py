@@ -35,3 +35,16 @@ def test_select_strikes_around_spot_limits_count() -> None:
     selected = _select_strikes_around_spot(strikes, spot=497, strike_limit=4)
 
     assert selected == [480.0, 490.0, 500.0, 510.0]
+
+
+def test_select_strikes_around_spot_samples_moneyness_band() -> None:
+    strikes = list(range(60, 141, 5))
+    selected = _select_strikes_around_spot(
+        strikes,
+        spot=100,
+        strike_limit=5,
+        min_moneyness=0.80,
+        max_moneyness=1.20,
+    )
+
+    assert selected == [80.0, 90.0, 100.0, 110.0, 120.0]

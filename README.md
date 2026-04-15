@@ -16,7 +16,14 @@ Daily prices and option-chain snapshots can be fetched from the IBKR Web API.
 
 Before using the IBKR Web API scripts, start the Client Portal Gateway locally and complete the browser login flow.
 
-From the extracted `clientportal.gw` directory on Windows:
+From the extracted `clientportal.gw` directory on macOS:
+
+```bash
+cd /path/to/clientportal.gw
+bin/run.sh root/conf.yaml
+```
+
+On Windows:
 
 ```powershell
 cd C:\path\to\clientportal.gw
