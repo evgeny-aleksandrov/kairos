@@ -70,9 +70,7 @@
         "--chain",
         "${workspaceFolder}/data/option_chain_ibkr.parquet",
         "--output-dir",
-        "${workspaceFolder}/outputs/debug_run",
-        "--smile-weighting",
-        "vega"
+        "${workspaceFolder}/outputs/debug_run"
       ]
     }
   ]

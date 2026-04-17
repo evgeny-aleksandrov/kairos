@@ -10,12 +10,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prices", required=True, help="Path to raw QQQ daily prices csv/parquet.")
     parser.add_argument("--chain", required=True, help="Path to raw QQQ option chain csv/parquet.")
     parser.add_argument("--output-dir", required=True, help="Directory for parquet outputs.")
-    parser.add_argument(
-        "--smile-weighting",
-        default="vega",
-        choices=["vega", "inverse_bid_ask", "uniform"],
-        help="Weighting scheme for per-expiry smile fits.",
-    )
     return parser
 
 
@@ -25,7 +19,6 @@ def main() -> None:
         prices_path=args.prices,
         chain_path=args.chain,
         output_dir=args.output_dir,
-        smile_weighting=args.smile_weighting,
     )
     print("Pipeline completed.")
     print(f"Processed price rows: {len(artifacts.processed_prices)}")

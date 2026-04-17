@@ -42,7 +42,6 @@ def prepare_smile_frame(chain: pd.DataFrame, iv_column: str = "implied_vol") -> 
 def fit_smile(
     expiry_frame: pd.DataFrame,
     iv_column: str = "implied_vol",
-    weighting: str = "vega",
 ) -> SmileFitResult:
     if expiry_frame.empty:
         raise ValueError("Cannot fit smile on empty expiry frame.")
@@ -52,14 +51,7 @@ def fit_smile(
     y = frame[iv_column].to_numpy()
     design = np.column_stack([np.ones_like(x), x, x**2])
 
-    if weighting == "vega":
-        weights = np.clip(frame["vega"].to_numpy(), 1.0e-8, None)
-    elif weighting == "inverse_bid_ask":
-        if "bid_ask_width" not in frame.columns:
-            raise ValueError("bid_ask_width required for inverse_bid_ask weighting.")
-        weights = 1.0 / np.clip(frame["bid_ask_width"].to_numpy(), 1.0e-8, None)
-    else:
-        weights = np.ones_like(y)
+    weights = np.clip(frame["vega"].to_numpy(), 1.0e-8, None)
 
     sqrt_w = np.sqrt(weights)
     lhs = design * sqrt_w[:, None]
@@ -79,13 +71,12 @@ def fit_smile(
 def fit_surface(
     chain: pd.DataFrame,
     iv_column: str = "implied_vol",
-    weighting: str = "vega",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     smile_rows: list[pd.DataFrame] = []
     param_rows: list[dict[str, float | pd.Timestamp]] = []
 
     for expiry, group in chain.groupby("expiry", sort=True):
-        fit = fit_smile(group, iv_column=iv_column, weighting=weighting)
+        fit = fit_smile(group, iv_column=iv_column)
         smile_rows.append(fit.fitted)
         param_rows.append(
             {

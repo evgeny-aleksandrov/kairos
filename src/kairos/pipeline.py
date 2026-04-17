@@ -91,7 +91,6 @@ def run_pipeline(
     prices_path: str | Path,
     chain_path: str | Path,
     output_dir: str | Path,
-    smile_weighting: str = "vega",
 ) -> PipelineArtifacts:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -116,7 +115,7 @@ def run_pipeline(
     enriched_chain = enrich_chain_with_iv_and_greeks(processed_chain.data)
     enriched_chain.to_parquet(output_dir / "option_chain_with_iv_greeks.parquet", index=False)
 
-    fitted_chain, smile_params = fit_surface(enriched_chain, weighting=smile_weighting)
+    fitted_chain, smile_params = fit_surface(enriched_chain)
     fitted_chain.to_parquet(output_dir / "fitted_smiles.parquet", index=False)
     parameter_table_over_time(smile_params).to_parquet(
         output_dir / "smile_parameters.parquet",
