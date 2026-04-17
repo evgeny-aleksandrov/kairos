@@ -4,7 +4,11 @@ import numpy as np
 
 from kairos.options.black_scholes import call_price, discount_factor, put_price
 from kairos.options.greeks import delta, gamma, rho, theta, vega
-from kairos.options.implied_vol import implied_volatility, implied_volatility_vectorized
+from kairos.options.implied_vol import (
+    arbitrage_bounds,
+    implied_volatility,
+    implied_volatility_vectorized,
+)
 
 
 def test_black_scholes_put_call_parity() -> None:
@@ -42,6 +46,20 @@ def test_implied_volatility_recovers_input_sigma() -> None:
     market_price = float(call_price(100.0, 105.0, 0.03, 0.01, 0.25, 0.75))
     solved = implied_volatility("call", market_price, 100.0, 105.0, 0.03, 0.01, 0.75)
     assert np.isclose(solved, 0.25, atol=1.0e-6)
+
+
+def test_implied_volatility_clips_price_just_below_lower_bound() -> None:
+    lower, _ = arbitrage_bounds("call", 100.0, 80.0, 0.03, 0.01, 0.5)
+    solved = implied_volatility("call", lower * 0.99, 100.0, 80.0, 0.03, 0.01, 0.5)
+
+    assert np.isfinite(solved)
+
+
+def test_implied_volatility_clips_price_just_above_upper_bound() -> None:
+    _, upper = arbitrage_bounds("call", 100.0, 80.0, 0.03, 0.01, 0.5)
+    solved = implied_volatility("call", upper * 1.01, 100.0, 80.0, 0.03, 0.01, 0.5)
+
+    assert np.isfinite(solved)
 
 
 def test_vectorized_implied_volatility() -> None:

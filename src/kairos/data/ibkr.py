@@ -349,8 +349,11 @@ def _select_strikes_around_spot(
         return sorted(ordered[:strike_limit])
 
     atm_index = min(range(len(unique)), key=lambda idx: abs(unique[idx] - spot))
-    indexes = set(np.linspace(0, len(unique) - 1, strike_limit - 1).round().astype(int))
+    indexes = set(np.linspace(0, len(unique) - 1, strike_limit).round().astype(int))
     indexes.add(atm_index)
+    while len(indexes) > strike_limit:
+        removable = [idx for idx in indexes if idx != atm_index]
+        indexes.remove(min(removable, key=lambda idx: abs(idx - atm_index)))
     return [unique[idx] for idx in sorted(indexes)]
 
 

@@ -51,15 +51,18 @@ def implied_volatility(
     max_iter: int = 100,
     tol: float = 1.0e-8,
     return_error: bool = False,
+    tol_bounds: float = 0.02,
 ) -> float | ImpliedVolResult:
     opt_type = option_type.lower()
     lower_bound, upper_bound = arbitrage_bounds(
         opt_type, spot, strike, rate, dividend_yield, maturity
     )
+    lower_tolerance = max(abs(lower_bound) * tol_bounds, 1.0e-10)
+    upper_tolerance = max(abs(upper_bound) * tol_bounds, 1.0e-10)
     if (
         not np.isfinite(market_price)
-        or market_price < lower_bound - 1.0e-10
-        or market_price > upper_bound + 1.0e-10
+        or market_price < lower_bound - lower_tolerance
+        or market_price > upper_bound + upper_tolerance
     ):
         result = ImpliedVolResult(np.nan, False, method, "price_outside_arbitrage_bounds")
         return result if return_error else np.nan
@@ -67,6 +70,20 @@ def implied_volatility(
     if maturity <= 0:
         result = ImpliedVolResult(np.nan, False, method, "non_positive_maturity")
         return result if return_error else np.nan
+
+    model_lower_price = float(
+        option_price(opt_type, spot, strike, rate, dividend_yield, lower_vol, maturity)
+    )
+    model_upper_price = float(
+        option_price(opt_type, spot, strike, rate, dividend_yield, upper_vol, maturity)
+    )
+    market_price = float(
+        np.clip(
+            market_price,
+            model_lower_price + 1.0e-10,
+            model_upper_price - 1.0e-10,
+        )
+    )
 
     def objective(vol: float) -> float:
         return float(
