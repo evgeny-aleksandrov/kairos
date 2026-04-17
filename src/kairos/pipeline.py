@@ -13,7 +13,7 @@ from kairos.data.options_chain import (
 from kairos.data.prices import clean_prices, load_prices, write_processed_prices
 from kairos.options.greeks import delta, gamma, rho, theta, vega
 from kairos.options.implied_vol import benchmark_iv_runtime, implied_volatility_vectorized
-from kairos.options.surface import fit_surface, parameter_table_over_time
+from kairos.options.surface import fit_surface, volatility_surface_plot
 from kairos.prices.implied_realized import compare_implied_vs_realized
 
 
@@ -117,10 +117,8 @@ def run_pipeline(
 
     fitted_chain, smile_params = fit_surface(enriched_chain)
     fitted_chain.to_parquet(output_dir / "fitted_smiles.parquet", index=False)
-    parameter_table_over_time(smile_params).to_parquet(
-        output_dir / "smile_parameters.parquet",
-        index=False,
-    )
+    surface_fig = volatility_surface_plot(smile_params, fitted_chain)
+    surface_fig.savefig(output_dir / "volatility_surface.png", dpi=180)
 
     comparison = compare_implied_vs_realized(enriched_chain, processed_prices.data)
     comparison.to_parquet(output_dir / "implied_vs_realized.parquet", index=False)

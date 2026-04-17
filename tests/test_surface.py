@@ -3,7 +3,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from kairos.options.surface import fit_smile, fit_surface, interpolate_surface
+from kairos.options.surface import (
+    fit_smile,
+    fit_surface,
+    interpolate_surface,
+    volatility_surface_plot,
+)
 
 
 def test_fit_smile_and_surface() -> None:
@@ -21,6 +26,8 @@ def test_fit_smile_and_surface() -> None:
             ),
             "time_to_expiry": [0.05, 0.05, 0.05, 0.12, 0.12, 0.12],
             "strike": [95, 100, 105, 95, 100, 105],
+            "symbol": ["QQQ"] * 6,
+            "quote_date": pd.to_datetime(["2026-04-01"] * 6),
             "underlying_price": [100, 100, 100, 100, 100, 100],
             "risk_free_rate": [0.03] * 6,
             "dividend_yield": [0.0] * 6,
@@ -34,7 +41,11 @@ def test_fit_smile_and_surface() -> None:
 
     fitted_chain, params = fit_surface(chain)
     surface_slice = interpolate_surface(params, 0.08, np.array([-0.05, 0.0, 0.05]))
+    surface_fig = volatility_surface_plot(params, fitted_chain)
 
     assert len(fitted_chain) == 6
     assert list(params.columns) == ["expiry", "time_to_expiry", "a", "b", "c"]
     assert surface_slice.shape == (3,)
+    assert surface_fig.axes
+    assert surface_fig.axes[0].get_title() == "QQQ - Quote 2026-04-01 Volatility Surface"
+    surface_fig.clear()

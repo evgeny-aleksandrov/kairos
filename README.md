@@ -8,6 +8,10 @@ Python repository for end-to-end listed-option volatility analysis:
 - fit volatility smiles and a basic surface
 - compare implied and realized volatility
 
+## Example Output
+
+![Volatility surface](docs/assets/volatility_surface.png)
+
 ## Ingestion Paths
 
 Daily prices and option-chain snapshots can be fetched from the IBKR Web API.

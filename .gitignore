@@ -46,3 +46,4 @@ Thumbs.db
 # Project outputs and local data
 artifacts/
 *.parquet
+outputs/

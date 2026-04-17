@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import cm
 from scipy.interpolate import interp1d
 
 from kairos.options.black_scholes import forward_price
@@ -115,51 +119,92 @@ def interpolate_surface(
     return coeffs[..., 0] + coeffs[..., 1] * k + coeffs[..., 2] * k**2
 
 
-def smile_plot_by_expiry(
-    fitted_chain: pd.DataFrame,
+def volatility_surface_plot(
+    params: pd.DataFrame,
+    fitted_chain: pd.DataFrame | None = None,
     iv_column: str = "implied_vol",
+    log_moneyness_points: int = 45,
+    maturity_points: int = 45,
+    azimuth: float = -55.0,
+    elevation: float = 24.0,
 ) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(9, 5))
-    for expiry, group in fitted_chain.groupby("expiry", sort=True):
-        group = group.sort_values("log_moneyness")
-        ax.scatter(
-            group["log_moneyness"],
-            group[iv_column],
-            s=18,
-            alpha=0.7,
-            label=f"{expiry:%Y-%m-%d} obs",
-        )
-        ax.plot(
-            group["log_moneyness"],
-            group["smile_fitted_vol"],
-            linewidth=1.8,
-            label=f"{expiry:%Y-%m-%d} fit",
-        )
-    ax.set_title("QQQ Volatility Smile by Expiry")
-    ax.set_xlabel("Log-moneyness log(K / F)")
-    ax.set_ylabel("Implied volatility")
-    ax.legend(ncol=2, fontsize=8)
-    ax.grid(alpha=0.2)
-    return fig
+    if params.empty:
+        raise ValueError("Cannot render volatility surface without smile parameters.")
 
+    maturity_min = float(params["time_to_expiry"].min())
+    maturity_max = float(params["time_to_expiry"].max())
+    maturity_grid = np.linspace(maturity_min, maturity_max, maturity_points)
 
-def residual_plot(fitted_chain: pd.DataFrame) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(9, 4))
-    ax.scatter(
-        fitted_chain["log_moneyness"],
-        fitted_chain["smile_residual"],
-        alpha=0.7,
-        s=18,
+    if fitted_chain is not None and not fitted_chain.empty:
+        log_moneyness_min = float(fitted_chain["log_moneyness"].quantile(0.02))
+        log_moneyness_max = float(fitted_chain["log_moneyness"].quantile(0.98))
+    else:
+        log_moneyness_min = -0.25
+        log_moneyness_max = 0.25
+
+    log_moneyness_grid = np.linspace(
+        log_moneyness_min,
+        log_moneyness_max,
+        log_moneyness_points,
     )
-    ax.axhline(0.0, color="black", linewidth=1.0)
-    ax.set_title("Smile Fit Residuals")
-    ax.set_xlabel("Log-moneyness")
-    ax.set_ylabel("Residual")
-    ax.grid(alpha=0.2)
+    x_grid, y_grid = np.meshgrid(log_moneyness_grid, maturity_grid)
+    z_grid = np.vstack(
+        [
+            interpolate_surface(params, maturity, log_moneyness_grid)
+            for maturity in maturity_grid
+        ]
+    )
+
+    fig = plt.figure(figsize=(11, 7))
+    ax = fig.add_subplot(111, projection="3d")
+    surface = ax.plot_surface(
+        x_grid,
+        y_grid * 365.0,
+        z_grid,
+        cmap=cm.viridis,
+        linewidth=0,
+        antialiased=True,
+        alpha=0.86,
+    )
+
+    if fitted_chain is not None and not fitted_chain.empty:
+        points = fitted_chain[
+            np.isfinite(fitted_chain["log_moneyness"])
+            & np.isfinite(fitted_chain["time_to_expiry"])
+            & np.isfinite(fitted_chain[iv_column])
+        ]
+        ax.scatter(
+            points["log_moneyness"],
+            points["time_to_expiry"] * 365.0,
+            points[iv_column],
+            color="black",
+            s=10,
+            alpha=0.42,
+            depthshade=False,
+        )
+
+    title = "Volatility Surface"
+    if fitted_chain is not None and not fitted_chain.empty:
+        title_parts: list[str] = []
+        if "symbol" in fitted_chain.columns:
+            symbols = fitted_chain["symbol"].dropna().astype(str).unique()
+            if len(symbols) == 1:
+                title_parts.append(symbols[0])
+        if "quote_date" in fitted_chain.columns:
+            quote_dates = pd.to_datetime(
+                fitted_chain["quote_date"].dropna(),
+                errors="coerce",
+            ).dropna()
+            if not quote_dates.empty:
+                title_parts.append(f"Quote {quote_dates.max():%Y-%m-%d}")
+        if title_parts:
+            title = f"{' - '.join(title_parts)} Volatility Surface"
+
+    ax.set_title(title)
+    ax.set_xlabel("Log-moneyness log(K / F)")
+    ax.set_ylabel("Days to expiry")
+    ax.set_zlabel("Implied volatility")
+    ax.view_init(elev=elevation, azim=azimuth)
+    fig.colorbar(surface, ax=ax, shrink=0.62, pad=0.08, label="Implied volatility")
+    fig.tight_layout()
     return fig
-
-
-def parameter_table_over_time(params: pd.DataFrame) -> pd.DataFrame:
-    table = params.copy()
-    table["curvature_rank"] = table["c"].rank(ascending=False, method="dense")
-    return table
