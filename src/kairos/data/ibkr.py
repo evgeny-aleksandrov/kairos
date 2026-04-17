@@ -157,7 +157,7 @@ class IBKRWebApiClient:
         self,
         conids: list[int],
         fields: list[str],
-        hydrate_seconds: float = 0.75, #Increasing to 0.75 seconds to allow IBKR to populate the bid/ask data.
+        hydrate_seconds: float = 5, #Increasing to 5 seconds to allow IBKR to populate the bid/ask data.
     ) -> list[dict[str, Any]]:
         if not conids:
             return []
@@ -382,7 +382,7 @@ def fetch_option_chain_snapshot(
     elif month_limit is None or month_limit <= 0:
         target_months = available_months
     else:
-        target_months = available_months[:month_limit]
+        target_months = available_months[1:month_limit+1]
 
     underlying_snapshot = resolved_client.fetch_marketdata_snapshot(
         [underlying_conid],
@@ -431,6 +431,12 @@ def fetch_option_chain_snapshot(
                 "bid",
                 "ask",
                 "last",
+                "bid_size",
+                "ask_size",
+                "last_size",
+                "bid_exchange",
+                "ask_exchange",
+                "last_exchange",
                 "volume",
                 "open_interest",
                 "underlying_price",
@@ -440,10 +446,24 @@ def fetch_option_chain_snapshot(
                 "conid",
                 "exchange",
                 "has_delayed",
+                "market_data_availability",
             ]
         )
 
-    snapshot_fields = ["31", "84", "86", "7089", "7638", "6509"]
+    snapshot_fields = [
+        "31",  # last
+        "84",  # bid
+        "86",  # ask
+        "88",  # bid size
+        "85",  # ask size
+        "7059",  # last size
+        "7068",  # bid exchange
+        "7057",  # ask exchange
+        "7058",  # last exchange
+        "7089",  # option volume
+        "7638",  # option open interest
+        "6509",  # market data availability
+    ]
     snapshot_rows: list[dict[str, Any]] = []
     for conid_batch in _chunked([int(contract["conid"]) for contract in contracts], 100):
         snapshot_rows.extend(
@@ -467,6 +487,12 @@ def fetch_option_chain_snapshot(
                 "bid": _safe_float(snapshot.get("84")),
                 "ask": _safe_float(snapshot.get("86")),
                 "last": _safe_float(snapshot.get("31")),
+                "bid_size": _safe_float(snapshot.get("88")),
+                "ask_size": _safe_float(snapshot.get("85")),
+                "last_size": _safe_float(snapshot.get("7059")),
+                "bid_exchange": snapshot.get("7068"),
+                "ask_exchange": snapshot.get("7057"),
+                "last_exchange": snapshot.get("7058"),
                 "volume": _safe_float(snapshot.get("7089")),
                 "open_interest": _safe_float(snapshot.get("7638")),
                 "underlying_price": spot,
@@ -476,6 +502,7 @@ def fetch_option_chain_snapshot(
                 "conid": conid,
                 "exchange": contract.get("exchange", resolved_exchange),
                 "has_delayed": snapshot.get("6509"),
+                "market_data_availability": snapshot.get("6509"),
                 "maturity_date": maturity,
                 "trading_class": contract.get("tradingClass"),
                 "multiplier": contract.get("multiplier"),
@@ -491,7 +518,7 @@ def write_option_chain_snapshot(
     symbol: str = "QQQ",
     months: list[str] | None = None,
     exchange: str | None = None,
-    month_limit: int | None = 6,
+    month_limit: int | None = 8,
     strike_limit_per_month: int | None = 25,
     min_moneyness: float | None = 0.80,
     max_moneyness: float | None = 1.20,
