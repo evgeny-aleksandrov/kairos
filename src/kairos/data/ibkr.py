@@ -268,7 +268,6 @@ def fetch_stock_history(
 
 def write_stock_history(
     output_dir: str | Path,
-    output_format: str = "parquet",
     symbol: str = "QQQ",
     period: str = "1y",
     bar: str = "1d",
@@ -277,7 +276,7 @@ def write_stock_history(
     source: str = "trades",
     client: IBKRWebApiClient | None = None,
 ) -> Path:
-    output_path = Path(output_dir) / f"{symbol.lower()}_prices_ibkr.{output_format}"
+    output_path = Path(output_dir) / f"{symbol.lower()}_prices_ibkr.parquet"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame = fetch_stock_history(
         symbol=symbol,
@@ -288,10 +287,7 @@ def write_stock_history(
         source=source,
         client=client,
     )
-    if output_path.suffix == ".parquet":
-        frame.to_parquet(output_path, index=False)
-    else:
-        frame.to_csv(output_path, index=False)
+    frame.to_parquet(output_path, index=False)
     return output_path
 
 
@@ -517,7 +513,7 @@ def fetch_option_chain_snapshot(
 
 
 def write_option_chain_snapshot(
-    output_path: str | Path,
+    output_dir: str | Path,
     symbol: str = "QQQ",
     months: list[str] | None = None,
     exchange: str | None = None,
@@ -530,7 +526,7 @@ def write_option_chain_snapshot(
     dividend_yield: float = 0.0,
     client: IBKRWebApiClient | None = None,
 ) -> Path:
-    output_path = Path(output_path)
+    output_path = Path(output_dir) / f"{symbol.lower()}_option_chain_ibkr.parquet"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame = fetch_option_chain_snapshot(
         symbol=symbol,
@@ -545,8 +541,5 @@ def write_option_chain_snapshot(
         dividend_yield=dividend_yield,
         client=client,
     )
-    if output_path.suffix == ".parquet":
-        frame.to_parquet(output_path, index=False)
-    else:
-        frame.to_csv(output_path, index=False)
+    frame.to_parquet(output_path, index=False)
     return output_path

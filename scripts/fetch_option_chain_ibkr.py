@@ -10,9 +10,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Fetch option-chain snapshots from the IBKR Web API."
     )
     parser.add_argument(
-        "--output",
+        "--output_dir",
         required=True,
-        help="Output csv or parquet path, e.g. data/option_chain_ibkr.parquet",
+        help="Output directory for the fetched option chain.",
     )
     parser.add_argument("--symbol", default="QQQ", help="Underlying ticker symbol.")
     parser.add_argument(
@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     path = write_option_chain_snapshot(
-        output_path=args.output,
+        output_dir=args.output_dir,
         symbol=args.symbol,
         months=args.months,
         exchange=args.exchange,

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
 import numpy as np
 import pandas as pd
 
@@ -33,11 +31,11 @@ OPTION_TYPE_MAP = {
 }
 
 
-def load_option_chain(path: str | Path, **kwargs: Any) -> pd.DataFrame:
+def load_option_chain(path: str | Path) -> pd.DataFrame:
     path = Path(path)
-    if path.suffix == ".parquet":
-        return pd.read_parquet(path, **kwargs)
-    return pd.read_csv(path, **kwargs)
+    if path.suffix != ".parquet":
+        raise ValueError(f"Option chain data must be a Parquet file: {path}")
+    return pd.read_parquet(path)
 
 
 def _append_drop_records(

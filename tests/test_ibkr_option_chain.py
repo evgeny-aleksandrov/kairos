@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
-from kairos.data.ibkr import _extract_option_months, _safe_float, _select_strikes_around_spot
+from kairos.data import ibkr
+from kairos.data.ibkr import (
+    _extract_option_months,
+    _safe_float,
+    _select_strikes_around_spot,
+    write_option_chain_snapshot,
+)
 
 
 def test_extract_option_months_from_secdef_search() -> None:
@@ -48,3 +55,18 @@ def test_select_strikes_around_spot_samples_moneyness_band() -> None:
     )
 
     assert selected == [80.0, 90.0, 100.0, 110.0, 120.0]
+
+
+def test_write_option_chain_snapshot_uses_symbol_filename(tmp_path, monkeypatch) -> None:
+    def fake_fetch_option_chain_snapshot(**kwargs) -> pd.DataFrame:
+        return pd.DataFrame([{"symbol": kwargs["symbol"].upper(), "strike": 500.0}])
+
+    monkeypatch.setattr(ibkr, "fetch_option_chain_snapshot", fake_fetch_option_chain_snapshot)
+
+    path = write_option_chain_snapshot(
+        output_dir=tmp_path,
+        symbol="AAPL",
+    )
+
+    assert path == tmp_path / "aapl_option_chain_ibkr.parquet"
+    assert path.exists()

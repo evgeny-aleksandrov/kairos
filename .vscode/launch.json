@@ -17,8 +17,6 @@
       "args": [
         "--output_dir",
         "${workspaceFolder}/data",
-        "--output-format",
-        "parquet",
         "--symbol",
         "QQQ",
         "--period",
@@ -41,8 +39,8 @@
         "IBKR_WEB_API_INSECURE": "true"
       },
       "args": [
-        "--output",
-        "${workspaceFolder}/data/option_chain_ibkr.parquet",
+        "--output_dir",
+        "${workspaceFolder}/data",
         "--symbol",
         "QQQ",
         "--strike-limit-per-month",
@@ -65,10 +63,8 @@
         "PYTHONPATH": "${workspaceFolder}/src"
       },
       "args": [
-        "--prices",
-        "${workspaceFolder}/data/qqq_prices_ibkr.parquet",
-        "--chain",
-        "${workspaceFolder}/data/option_chain_ibkr.parquet",
+        "--symbol",
+        "QQQ",
         "--output-dir",
         "${workspaceFolder}/outputs/debug_run"
       ]

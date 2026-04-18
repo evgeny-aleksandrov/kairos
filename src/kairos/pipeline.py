@@ -88,12 +88,21 @@ def enrich_chain_with_iv_and_greeks(
 
 
 def run_pipeline(
-    prices_path: str | Path,
-    chain_path: str | Path,
     output_dir: str | Path,
+    symbol: str = "QQQ",
+    data_dir: str | Path = "data",
 ) -> PipelineArtifacts:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = Path(data_dir)
+
+    symbol_key = symbol.lower()
+    prices_path = data_dir / f"{symbol_key}_prices_ibkr.parquet"
+    chain_path = data_dir / f"{symbol_key}_option_chain_ibkr.parquet"
+    missing_paths = [path for path in (prices_path, chain_path) if not path.exists()]
+    if missing_paths:
+        missing = ", ".join(str(path) for path in missing_paths)
+        raise FileNotFoundError(f"Missing required input Parquet file(s): {missing}")
 
     raw_prices = load_prices(prices_path)
     raw_chain = load_option_chain(chain_path)

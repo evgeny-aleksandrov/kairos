@@ -6,19 +6,23 @@ from kairos.pipeline import run_pipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the QQQ volatility research pipeline.")
-    parser.add_argument("--prices", required=True, help="Path to raw QQQ daily prices csv/parquet.")
-    parser.add_argument("--chain", required=True, help="Path to raw QQQ option chain csv/parquet.")
-    parser.add_argument("--output-dir", required=True, help="Directory for parquet outputs.")
+    parser = argparse.ArgumentParser(description="Run the volatility research pipeline.")
+    parser.add_argument("--symbol", default="QQQ", help="Underlying ticker symbol.")
+    parser.add_argument(
+        "--data-dir",
+        default="data",
+        help="Directory containing IBKR Parquet inputs.",
+    )
+    parser.add_argument("--output-dir", required=True, help="Directory for Parquet outputs.")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
     artifacts = run_pipeline(
-        prices_path=args.prices,
-        chain_path=args.chain,
         output_dir=args.output_dir,
+        symbol=args.symbol,
+        data_dir=args.data_dir,
     )
     print("Pipeline completed.")
     print(f"Processed price rows: {len(artifacts.processed_prices)}")

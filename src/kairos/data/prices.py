@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
 import numpy as np
 import pandas as pd
 
@@ -19,13 +17,13 @@ PRICE_COLUMNS = [
 ]
 
 
-def load_prices(path: str | Path, **kwargs: Any) -> pd.DataFrame:
-    """Load QQQ daily prices from csv or parquet."""
+def load_prices(path: str | Path) -> pd.DataFrame:
+    """Load daily prices from Parquet."""
 
     path = Path(path)
-    if path.suffix == ".parquet":
-        return pd.read_parquet(path, **kwargs)
-    return pd.read_csv(path, **kwargs)
+    if path.suffix != ".parquet":
+        raise ValueError(f"Price data must be a Parquet file: {path}")
+    return pd.read_parquet(path)
 
 
 def clean_prices(df: pd.DataFrame) -> ProcessedFrame:
