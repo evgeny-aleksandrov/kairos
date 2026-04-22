@@ -22,6 +22,23 @@ class SmileFitResult:
     fitted: pd.DataFrame
 
 
+def add_quote_quality_metrics(chain: pd.DataFrame) -> pd.DataFrame:
+    """Add quote-quality fields used to choose mids for surface fitting."""
+
+    frame = chain.copy()
+    if "mid" not in frame.columns:
+        frame["mid"] = 0.5 * (frame["bid"] + frame["ask"])
+    if "bid_ask_width" not in frame.columns:
+        frame["bid_ask_width"] = frame["ask"] - frame["bid"]
+
+    frame["relative_bid_ask_width"] = frame["bid_ask_width"] / frame["mid"]
+
+    frame["quote_quality_score"] = (
+        frame["relative_bid_ask_width"].replace([np.inf, -np.inf], np.nan).fillna(np.inf)
+    )
+    return frame
+
+
 def prepare_smile_frame(chain: pd.DataFrame, iv_column: str = "implied_vol") -> pd.DataFrame:
     frame = chain.copy()
     frame["forward"] = forward_price(
@@ -41,6 +58,64 @@ def prepare_smile_frame(chain: pd.DataFrame, iv_column: str = "implied_vol") -> 
             frame["time_to_expiry"].to_numpy(),
         )
     return frame
+
+
+def select_surface_quotes(
+    chain: pd.DataFrame,
+    iv_column: str = "implied_vol",
+    atm_log_moneyness_band: float = 0.01,
+) -> pd.DataFrame:
+
+    if chain.empty:
+        return chain.copy()
+
+    frame = add_quote_quality_metrics(prepare_smile_frame(chain, iv_column=iv_column))
+    finite = (
+        np.isfinite(frame[iv_column])
+        & np.isfinite(frame["mid"])
+        & np.isfinite(frame["relative_bid_ask_width"])
+        & (frame[iv_column] > 0.0)
+        & (frame["mid"] > 0.0)
+        & (frame["relative_bid_ask_width"] >= 0.0)
+    )
+    frame = frame.loc[finite].copy()
+    if frame.empty:
+        return frame
+
+    option_type = frame["option_type"].astype(str).str.lower()
+    log_moneyness = frame["log_moneyness"]
+    band = abs(float(atm_log_moneyness_band))
+
+    wing_puts = frame.loc[(option_type == "put") & (log_moneyness < -band)].copy()
+    wing_puts["surface_quote_role"] = "otm_put"
+    wing_calls = frame.loc[(option_type == "call") & (log_moneyness > band)].copy()
+    wing_calls["surface_quote_role"] = "otm_call"
+
+    atm_candidates = frame.loc[log_moneyness.abs() <= band].copy()
+    if not atm_candidates.empty:
+        group_columns = ["expiry", "strike"]
+        if "quote_date" in atm_candidates.columns:
+            group_columns.insert(0, "quote_date")
+        atm_candidates = atm_candidates.sort_values(
+            [
+                *group_columns,
+                "quote_quality_score",
+                "relative_bid_ask_width"
+            ],
+            ascending=[True] * (len(group_columns) + 2) + [False], #Th sorting here might be wrong
+        )
+        atm_candidates = atm_candidates.groupby(group_columns, as_index=False).head(1)
+        atm_candidates["surface_quote_role"] = "atm_best_mid"
+
+    selected_parts = [wing_puts, atm_candidates, wing_calls]
+    non_empty_parts = [part for part in selected_parts if not part.empty]
+    if not non_empty_parts:
+        empty = frame.iloc[0:0].copy()
+        empty["surface_quote_role"] = pd.Series(dtype=object)
+        return empty
+
+    selected = pd.concat(non_empty_parts, ignore_index=True)
+    return selected.sort_values(["expiry", "strike", "option_type"]).reset_index(drop=True)
 
 
 def fit_smile(
@@ -75,11 +150,22 @@ def fit_smile(
 def fit_surface(
     chain: pd.DataFrame,
     iv_column: str = "implied_vol",
+    select_quotes: bool = True,
+    atm_log_moneyness_band: float = 0.01,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     smile_rows: list[pd.DataFrame] = []
     param_rows: list[dict[str, float | pd.Timestamp]] = []
+    surface_chain = (
+        select_surface_quotes(
+            chain,
+            iv_column=iv_column,
+            atm_log_moneyness_band=atm_log_moneyness_band,
+        )
+        if select_quotes
+        else chain
+    )
 
-    for expiry, group in chain.groupby("expiry", sort=True):
+    for expiry, group in surface_chain.groupby("expiry", sort=True):
         fit = fit_smile(group, iv_column=iv_column)
         smile_rows.append(fit.fitted)
         param_rows.append(

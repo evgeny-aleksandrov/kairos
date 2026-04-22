@@ -44,7 +44,7 @@
         "--symbol",
         "QQQ",
         "--strike-limit-per-month",
-        "12",
+        "18",
         "--risk-free-rate",
         "0.04",
         "--dividend-yield",
