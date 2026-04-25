@@ -35,7 +35,7 @@ def add_quote_quality_metrics(chain: pd.DataFrame) -> pd.DataFrame:
 
     frame["quote_quality_score"] = (
         frame["relative_bid_ask_width"].replace([np.inf, -np.inf], np.nan).fillna(np.inf)
-    )
+    ) #Maybe include depth and imbalance of the bid/ask size later to have a richer quote quality score
     return frame
 
 
@@ -90,7 +90,7 @@ def select_surface_quotes(
     wing_puts["surface_quote_role"] = "otm_put"
     wing_calls = frame.loc[(option_type == "call") & (log_moneyness > band)].copy()
     wing_calls["surface_quote_role"] = "otm_call"
-
+    #Look at the moneyness on the spot vs moneyness on the forward, I think there might be some issues here
     atm_candidates = frame.loc[log_moneyness.abs() <= band].copy()
     if not atm_candidates.empty:
         group_columns = ["expiry", "strike"]
@@ -102,7 +102,7 @@ def select_surface_quotes(
                 "quote_quality_score",
                 "relative_bid_ask_width"
             ],
-            ascending=[True] * (len(group_columns) + 2) + [False], #Th sorting here might be wrong
+            ascending=[True] * (len(group_columns) + 1) + [False], #Th sorting here might be wrong
         )
         atm_candidates = atm_candidates.groupby(group_columns, as_index=False).head(1)
         atm_candidates["surface_quote_role"] = "atm_best_mid"
