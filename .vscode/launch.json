@@ -39,10 +39,12 @@
         "IBKR_WEB_API_INSECURE": "true"
       },
       "args": [
-        "--output_dir",
+        "--output-dir",
         "${workspaceFolder}/data",
         "--symbol",
         "QQQ",
+        "--month-limit",
+        "6",
         "--strike-limit-per-month",
         "18",
         "--risk-free-rate",

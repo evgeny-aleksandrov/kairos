@@ -11,9 +11,12 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 import numpy as np
+from bisect import bisect_left
 
 
 DEFAULT_BASE_URL = "https://localhost:5000/v1/api"
+
+OPTION_TYPES = ("C", "P")
 
 
 class IBKRError(RuntimeError):
@@ -291,20 +294,14 @@ def write_stock_history(
     return output_path
 
 
-def ibkr_option_chain_todo() -> None:
-    raise NotImplementedError(
-        "IBKR option-chain integration is now in fetch_option_chain_snapshot()."
-    )
-
-
 def _extract_option_months(search_results: list[dict[str, Any]]) -> tuple[int, list[str], str]:
     for result in search_results:
         conid = result.get("conid")
         for section in result.get("sections", []):
             if section.get("secType") == "OPT":
                 months = str(section.get("months", "")).split(";")
-                months = [month for month in months if month]
-                exchange = str(section.get("exchange", "SMART")).split(";")[0]
+                all_exchanges = str(section.get("exchange", "SMART")).split(";")
+                exchange = "SMART" if "SMART" in all_exchanges else all_exchanges[0] if all_exchanges else "SMART"
                 if conid and months:
                     return int(conid), months, exchange
     raise IBKRError("Could not extract option months from secdef search response.")
@@ -322,68 +319,80 @@ def _safe_float(value: Any) -> float:
 def _select_strikes_around_spot(
     strikes: list[float],
     spot: float,
+    side: str,
     strike_limit: int | None,
-    min_moneyness: float | None = None,
-    max_moneyness: float | None = None,
+    moneyness_spread: float = 0.20,
 ) -> list[float]:
     unique = sorted({float(strike) for strike in strikes})
-
-    if not np.isnan(spot) and min_moneyness is not None:
-        unique = [strike for strike in unique if strike >= spot * min_moneyness]
-    if not np.isnan(spot) and max_moneyness is not None:
-        unique = [strike for strike in unique if strike <= spot * max_moneyness]
+    side
+    min_moneyness = 1 - moneyness_spread
+    max_moneyness = 1 + moneyness_spread
+    
+    if np.isnan(spot):
+        raise IBKRError("Spot price is NaN, cannot select strikes around spot.")
+    
+    if strike_limit <= 2:
+        raise IBKRError("Strike limit per month must be greater than 2 to select strikes around spot.")
+    
+    unique = _filter_strikes_by_moneyness_and_side(unique, spot, min_moneyness, max_moneyness, side)
 
     if not unique:
         return []
-    if strike_limit is None or strike_limit <= 0 or strike_limit >= len(unique):
+    if strike_limit >= len(unique):
         return unique
-    if np.isnan(spot):
-        indexes = np.linspace(0, len(unique) - 1, strike_limit).round().astype(int)
-        return [unique[idx] for idx in sorted(set(indexes))]
-    if min_moneyness is None and max_moneyness is None:
-        ordered = sorted(unique, key=lambda strike: (abs(strike - spot), strike))
-        return sorted(ordered[:strike_limit])
 
-    atm_index = min(range(len(unique)), key=lambda idx: abs(unique[idx] - spot))
-    indexes = set(np.linspace(0, len(unique) - 1, strike_limit).round().astype(int))
-    indexes.add(atm_index)
-    while len(indexes) > strike_limit:
-        removable = [idx for idx in indexes if idx != atm_index]
-        indexes.remove(min(removable, key=lambda idx: abs(idx - atm_index)))
-    return [unique[idx] for idx in sorted(indexes)]
+    adj_strike_limit = _make_odd(strike_limit//2)
+    target_values = [K*spot for K in np.linspace(1 if side == "call" else 0.8, 1.2 if side == "call" else 1, adj_strike_limit)]
+    return [_get_closest_to_value(unique, target) for target in target_values]
 
+def _filter_strikes_by_moneyness_and_side(
+    strikes: list[float],
+    spot: float,
+    min_moneyness: float,
+    max_moneyness: float,
+    side: str,
+    tolerance: float = 0.01) -> list[float]:
+    if side == "call":
+        return [strike for strike in strikes if strike >= spot * (1-tolerance) and strike <= spot * max_moneyness]
+    else:
+        return [strike for strike in strikes if strike >= spot * min_moneyness and strike <= spot * (1+tolerance)]
+
+
+def _make_odd(value: int) -> int:
+    return value if value % 2 == 1 else value + 1
+
+def _get_closest_to_value(values: list[float], target: float) -> float:
+    insert_at = bisect_left(values, target)
+    if insert_at == len(values):
+        return values[-1]
+    if insert_at == 0:
+        return values[0]
+    before = values[insert_at - 1]
+    after = values[insert_at]
+    if abs(before - target) <= abs(after - target):
+        return before
+    return after
 
 def _chunked(values: list[int], chunk_size: int) -> list[list[int]]:
     return [values[idx : idx + chunk_size] for idx in range(0, len(values), chunk_size)]
 
 
 def fetch_option_chain_snapshot(
-    symbol: str = "QQQ",
-    months: list[str] | None = None,
-    exchange: str | None = None,
+    symbol: str,
     month_limit: int | None = 6,
     strike_limit_per_month: int | None = 25,
-    min_moneyness: float | None = 0.80,
-    max_moneyness: float | None = 1.20,
-    rights: tuple[str, ...] = ("C", "P"),
+    moneyness_spread: float = 0.20,
     risk_free_rate: float = 0.0,
-    dividend_yield: float = 0.0,
-    client: IBKRWebApiClient | None = None,
+    dividend_yield: float = 0.0
 ) -> pd.DataFrame:
-    resolved_client = client or IBKRWebApiClient()
-    resolved_client.ensure_brokerage_session()
+    client = IBKRWebApiClient()
+    client.ensure_brokerage_session()
 
-    search_results = resolved_client.search_secdef(symbol=symbol, sec_type="STK")
+    search_results = client.search_secdef(symbol=symbol, sec_type="STK")
     underlying_conid, available_months, discovered_exchange = _extract_option_months(search_results)
-    resolved_exchange = exchange or discovered_exchange or "SMART"
-    if months is not None:
-        target_months = months
-    elif month_limit is None or month_limit <= 0:
-        target_months = available_months
-    else:
-        target_months = available_months[1:month_limit+1]
+    target_months = available_months[1:month_limit+1]
 
-    underlying_snapshot = resolved_client.fetch_marketdata_snapshot(
+    underlying_snapshot = client.fetch_marketdata_snapshot(
         [underlying_conid],
         fields=["31"],
     )
@@ -391,31 +400,30 @@ def fetch_option_chain_snapshot(
 
     contracts: list[dict[str, Any]] = []
     for month in target_months:
-        strike_payload = resolved_client.fetch_option_strikes(
+        strike_payload = client.fetch_option_strikes(
             underlying_conid=underlying_conid,
             month=month,
-            exchange=resolved_exchange,
+            exchange=discovered_exchange,
         )
-        strike_pool: list[float] = []
-        for right in rights:
+        selected_strikes: dict[float] = {}
+        for right in OPTION_TYPES:
             side_key = "call" if right == "C" else "put"
-            strike_pool.extend(strike_payload.get(side_key, []))
-        selected_strikes = _select_strikes_around_spot(
-            strike_pool,
-            spot=spot,
-            strike_limit=strike_limit_per_month,
-            min_moneyness=min_moneyness,
-            max_moneyness=max_moneyness,
-        )
-
-        for strike in selected_strikes:
-            for right in rights:
-                info_rows = resolved_client.fetch_option_contract_info(
+            selected_strikes[right] = _select_strikes_around_spot(
+                strike_payload.get(side_key, []),
+                spot=spot,
+                side = side_key,
+                strike_limit=strike_limit_per_month,
+                moneyness_spread=moneyness_spread
+                )
+                
+        for right in OPTION_TYPES:
+            for strike in selected_strikes[right]:
+                info_rows = client.fetch_option_contract_info(
                     underlying_conid=underlying_conid,
                     month=month,
                     strike=strike,
                     right=right,
-                    exchange=resolved_exchange,
+                    exchange=discovered_exchange,
                 )
                 if info_rows:
                     contracts.append(info_rows[0])
@@ -466,7 +474,7 @@ def fetch_option_chain_snapshot(
     snapshot_rows: list[dict[str, Any]] = []
     for conid_batch in _chunked([int(contract["conid"]) for contract in contracts], 100):
         snapshot_rows.extend(
-            resolved_client.fetch_marketdata_snapshot(conid_batch, fields=snapshot_fields)
+            client.fetch_marketdata_snapshot(conid_batch, fields=snapshot_fields)
         )
     snapshot_map = {int(row["conid"]): row for row in snapshot_rows if row.get("conid") is not None}
 
@@ -499,7 +507,7 @@ def fetch_option_chain_snapshot(
                 "dividend_yield": dividend_yield,
                 "symbol": contract.get("symbol", symbol.upper()),
                 "conid": conid,
-                "exchange": contract.get("exchange", resolved_exchange),
+                "exchange": contract.get("exchange", discovered_exchange),
                 "has_delayed": snapshot.get("6509"),
                 "market_data_availability": snapshot.get("6509"),
                 "maturity_date": maturity,
@@ -514,32 +522,22 @@ def fetch_option_chain_snapshot(
 
 def write_option_chain_snapshot(
     output_dir: str | Path,
-    symbol: str = "QQQ",
-    months: list[str] | None = None,
-    exchange: str | None = None,
+    symbol: str,
     month_limit: int | None = 8,
     strike_limit_per_month: int | None = 25,
-    min_moneyness: float | None = 0.80,
-    max_moneyness: float | None = 1.20,
-    rights: tuple[str, ...] = ("C", "P"),
-    risk_free_rate: float = 0.0,
+    moneyness_spread: float = 0.20,
+    risk_free_rate: float = 0.0, #Calculate these in some way
     dividend_yield: float = 0.0,
-    client: IBKRWebApiClient | None = None,
 ) -> Path:
     output_path = Path(output_dir) / f"{symbol.lower()}_option_chain_ibkr.parquet"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame = fetch_option_chain_snapshot(
         symbol=symbol,
-        months=months,
-        exchange=exchange,
         month_limit=month_limit,
         strike_limit_per_month=strike_limit_per_month,
-        min_moneyness=min_moneyness,
-        max_moneyness=max_moneyness,
-        rights=rights,
+        moneyness_spread=moneyness_spread,
         risk_free_rate=risk_free_rate,
-        dividend_yield=dividend_yield,
-        client=client,
+        dividend_yield=dividend_yield
     )
     frame.to_parquet(output_path, index=False)
     return output_path
